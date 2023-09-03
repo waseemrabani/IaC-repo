@@ -19,11 +19,11 @@ Resources:
         - 'FARGATE'
       Cpu:  512
       Memory: 1024
-      ExecutionRoleArn: arn:aws:iam::190162345:role/ecsTaskExecutionRole
-      TaskRoleArn: arn:aws:iam::19016823458:role/ecsTaskExecutionRole
+      ExecutionRoleArn: arn:aws:iam::19016455458:role/ecsTaskExecutionRole
+      TaskRoleArn: arn:aws:iam::19016455458:role/ecsTaskExecutionRole
       ContainerDefinitions:
         - Name: java-app
-          Image: 1901634556.dkr.ecr.eu-west-1.amazonaws.com/app-1:latest
+          Image: 19016455458.dkr.ecr.eu-west-1.amazonaws.com/app-1:latest
           PortMappings:
             - ContainerPort: 3000
   SecurityGroup:
