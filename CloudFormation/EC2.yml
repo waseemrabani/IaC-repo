@@ -1,0 +1,42 @@
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      -
+        Label:
+          default: "VPC Settings"
+        Parameters:
+          - Vpc
+          - Subnet
+Parameters:
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+Resources:
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access and HTTP access
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: 0.0.0.0/0
+      VpcId:
+        Ref: Vpc
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-029cfc5433fd1b52
+      InstanceType: t2.micro
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet:
+            - Ref: InstanceSecurityGroup
+          SubnetId:
+            Ref: Subnet
+      KeyName: test
+      Tags:
+        - Key: Name   
+          Value: Test-Ec2

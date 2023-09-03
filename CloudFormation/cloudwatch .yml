@@ -1,0 +1,74 @@
+Parameters:
+  UbuntuAMI:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: '/aws/service/canonical/ubuntu/server/20.04/stable/current/amd64/hvm/ebs-gp2/ami-id'
+  Vpc:
+    Type: 'AWS::EC2::VPC::Id'
+  Subnet:
+    Type: 'AWS::EC2::Subnet::Id'
+Resources:
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: EC2LaunchTemplate
+      LaunchTemplateData:
+        InstanceType: t3.micro
+        ImageId: !Ref UbuntuAMI
+        IamInstanceProfile:
+          Name: !Ref InstanceProfile
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: True
+            SubnetId: !Ref Subnet
+  EC2:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: "1"
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+            files:
+              /opt/aws/amazon-cloudwatch-agent/bin/config.json:
+                content: !Sub |
+                  {
+                    "agent": {
+                      "metrics_collection_interval": 60,
+                      "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log"
+                    }
+                  }
+        commands:
+              01_install_agent:
+                command: |
+                  apt-get update -y
+                  wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+                  dpkg -i -E ./amazon-cloudwatch-agent.deb
+                  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json -s
+
+  RoleCloudWatch:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: !Ref RoleCloudWatch
+  
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Stelligent-U 08 CloudWatch'
+      VpcId: !Ref Vpc

@@ -1,0 +1,190 @@
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      -
+        Label:
+          default: "EC2 Settings"
+        Parameters:
+          - Vpc
+          - Subnet
+Parameters:
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+  Subnet:
+    Type: List<AWS::EC2::Subnet::Id>
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.small
+    AllowedValues:
+    - t1.micro
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+Mappings:
+  RegionMap:
+    eu-north-1:
+      ami: ami-0eb3006e49308f9d6
+    ap-south-1:
+      ami: ami-0675118d2eaeabbc7
+    eu-west-3:
+      ami: ami-0513af4e9a884a24a
+    eu-west-2:
+      ami: ami-073ee45c9f61cbaa3
+    eu-west-1:
+      ami: ami-0f93e856d36a101f8
+    ap-northeast-3:
+      ami: ami-087c3a2258b97a89e
+    ap-northeast-2:
+      ami: ami-08597df434c0ea272
+    ap-northeast-1:
+      ami: ami-09bba7f9d4df930e6
+    sa-east-1:
+      ami: ami-0e11f70e207b7e5a9
+    ca-central-1:
+      ami: ami-073c944d45ffb4f27
+    ap-southeast-1:
+      ami: ami-0bd6906508e74f692
+    ap-southeast-2:
+      ami: ami-0d539270873f66397
+    eu-central-1:
+      ami: ami-02584c1c9d05efa69
+    us-east-1:
+      ami: ami-0c4f7023847b90238
+    us-east-2:
+      ami: ami-0eea504f45ef7a8f7
+    us-west-1:
+      ami: ami-0487b1fe60c1fd1a2
+    us-west-2:
+      ami: ami-0cb4e786f15603b0d
+Resources:  
+  MySecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Allow SSH and HTTP access'
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: 'tcp'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: 'tcp'
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: '0.0.0.0/0'
+      VpcId:
+        Ref: Vpc
+  UbuntuLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId:  
+          Fn::FindInMap:
+            - RegionMap
+            - Ref: AWS::Region
+            - ami         # Ubuntu 18.04 LTS
+        InstanceType: 
+          Ref: InstanceType
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            sudo apt update
+            sudo apt install nginx -y 
+            sudo systemctl start nginx
+        KeyName: test
+        NetworkInterfaces:
+          - AssociatePublicIpAddress: true
+            DeviceIndex: 0
+            # SubnetId: 
+            #   Ref: Subnet # ID of the existing VPC subnet
+            Groups: 
+              - Ref: MySecurityGroup # ID of the existing security group
+  
+  #Auto Scaling Group
+  MyAutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      VPCZoneIdentifier:
+        Ref: Subnet
+      LaunchTemplate:
+        LaunchTemplateId: !Ref UbuntuLaunchTemplate
+        Version: 1
+      MinSize: "1"
+      MaxSize: "5"
+      DesiredCapacity: '1'
+      TargetGroupARNs:
+      - Ref: ALBTargetGroup
+  # Creating Appllication Load Balancer    
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      SecurityGroups:
+        - Ref: MySecurityGroup
+      Subnets:
+        Ref: Subnet
+  # Adding Listner to ALB      
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: ALBTargetGroup
+      LoadBalancerArn:
+        Ref: ApplicationLoadBalancer
+      Port: '80'
+      Protocol: HTTP
+  #Creating Target Group    
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Ref: Vpc   
+# Creating  Auto Scaling Alarm
+  MyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: CPUAlarm
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Period: 60
+      Statistic: Average
+      Threshold: 70
+      AlarmDescription: Alarm when CPU exceeds 70%
+      AlarmActions:
+        - !Ref MyScaleUpPolicy
+      OKActions:
+        - !Ref MyScaleDownPolicy
+  # Creating Scale Up Policy      
+  MyScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref MyAutoScalingGroup
+      PolicyType: StepScaling
+      StepAdjustments:
+        - MetricIntervalLowerBound: 0
+          ScalingAdjustment: 1
+  #Creating Scale Down Policy        
+  MyScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref MyAutoScalingGroup
+      PolicyType: StepScaling
+      StepAdjustments:
+        - MetricIntervalLowerBound: 0
+          ScalingAdjustment: -1

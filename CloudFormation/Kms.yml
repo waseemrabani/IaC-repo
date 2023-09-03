@@ -1,0 +1,119 @@
+Parameters:
+  S3BucketName:
+    Type: String
+  KeySpec:
+    Description: 'Specify the type of the CMK.'
+    Type: String
+    AllowedValues:
+    - SYMMETRIC_DEFAULT
+    - RSA_2048
+    - RSA_3072
+    - RSA_4096
+    - ECC_NIST_P256
+    - ECC_NIST_P384
+    - ECC_NIST_P521
+    - ECC_SECG_P256K1
+    Default: SYMMETRIC_DEFAULT
+  KeyUsage:
+    Description: 'Which cryptographic operations should the CMK support?'
+    Type: String
+    AllowedValues:
+    - ENCRYPT_DECRYPT
+    - SIGN_VERIFY
+    Default: ENCRYPT_DECRYPT
+  KeyRotation:
+    Type: String 
+    AllowedValues:
+    - true 
+    - false
+    Default: false
+  PendingWindowInDays:
+    Description: Enter Values from 7 to 30
+    Type: String
+    AllowedPattern: \b([7-9]|[12][0-9]|3[0])\b
+    Default: 7
+  MultiRegion:
+    Type: String 
+    AllowedValues:
+    - true 
+    - false
+    Default: false
+
+Resources:
+  S3Key:
+    Type: 'AWS::KMS::Key'
+    Properties:
+      EnableKeyRotation: !Ref KeyRotation
+      PendingWindowInDays: !Ref PendingWindowInDays
+      MultiRegion: !Ref MultiRegion
+      KeySpec: !Ref KeySpec
+      KeyUsage: !Ref KeyUsage
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+          Action: kms:*
+          Resource: "*"
+        - Sid: Allow access for Key Administrators
+          Effect: Allow
+          Principal:
+            AWS: '*'
+          Action:
+          - kms:Create*
+          - kms:Describe*
+          - kms:Enable*
+          - kms:List*
+          - kms:Put*
+          - kms:Update*
+          - kms:Revoke*
+          - kms:Disable*
+          - kms:Get*
+          - kms:Delete*
+          - kms:TagResource
+          - kms:UntagResource
+          Resource: "*"
+        - Sid: Allow use of the key
+          Effect: Allow
+          Principal:
+            AWS: '*'
+          Action:
+          - kms:Encrypt
+          - kms:Decrypt
+          - kms:ReEncrypt*
+          - kms:GenerateDataKey*
+          - kms:DescribeKey
+          Resource: "*"
+        - Sid: Allow attachment of persistent resources
+          Effect: Allow
+          Principal:
+            AWS: '*'
+          Action:
+          - kms:CreateGrant
+          - kms:ListGrants
+          - kms:RevokeGrant
+          Resource: "*"
+          Condition:
+            Bool:
+              kms:GrantIsForAWSResource: 'true'
+  S3KeyAlias:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: 'AWS::KMS::Alias'
+    Properties:
+      AliasName: !Sub 'alias/s3-key'
+      TargetKeyId: !Ref S3Key
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    # DeletionPolicy: Retain
+    Properties:
+      BucketName: !Ref S3BucketName
+      BucketEncryption: 
+          ServerSideEncryptionConfiguration: 
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref S3Key
+
+    
